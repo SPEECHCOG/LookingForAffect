@@ -1,0 +1,1 @@
+## This repository contains the experimentation and analysis codes for the Interspeech 2026 article "Looking for Affect in Spontaneous Finnish through Linguistic Interpretability"
