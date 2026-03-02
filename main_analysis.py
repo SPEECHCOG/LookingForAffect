@@ -88,7 +88,7 @@ if __name__ == '__main__':
     
     valence = False
     
-    data_root = "/Users/lahtine9/workwork/python_ml_utils/LookingForValence/data/results_all_7/"
+    data_root = "./data/results_all/"
     
     
     if valence:
