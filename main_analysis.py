@@ -15,6 +15,7 @@ import soundfile as sf
 import matplotlib.pyplot as plt
 from scipy.spatial import distance
 import pickle
+from scipy import stats
 
 #TODO: tsekkaa valence gap etc paprut
 
@@ -35,6 +36,9 @@ plt.rc('ytick', labelsize=SMALL_SIZE)    # fontsize of the tick labels
 plt.rc('legend', fontsize=SMALLER_SIZE)    # legend fontsize
 plt.rc('figure', titlesize=SMALL_SIZE)  # fontsize of the figure title
 plt.rc('font', **{'family': 'sans-serif', 'sans-serif': ['Arial']})
+
+
+
 
 
 AUDIO_FEATURES = {"ExHuBERT", "eGeMAPS"}
@@ -86,7 +90,7 @@ def filter_text_only(df: pd.DataFrame):
 if __name__ == '__main__':
     
     
-    valence = False
+    valence = True
     
     data_root = "./data/results_all/"
     
@@ -109,6 +113,8 @@ if __name__ == '__main__':
     a3_noncoll_test_CCCs = {}
     a4_noncoll_test_CCCs = {}
     a5_noncoll_test_CCCs = {}
+    
+    GS_noncoll_fold_test_CCCs = {}
     
     noncoll_val_mean_CCCs = {}
     
@@ -138,9 +144,18 @@ if __name__ == '__main__':
                 a3_noncoll_test_CCCs[name] = (np.mean(results["Fold Test CCCs"]["a3"]), np.std(results["Fold Test CCCs"]["a3"]))
                 a4_noncoll_test_CCCs[name] = (np.mean(results["Fold Test CCCs"]["a4"]), np.std(results["Fold Test CCCs"]["a4"]))
                 a5_noncoll_test_CCCs[name] = (np.mean(results["Fold Test CCCs"]["a5"]), np.std(results["Fold Test CCCs"]["a5"]))
+                
+                
+                for j, fold_test_CCC in enumerate(results["Fold Test CCCs"]["GS"]):
+                    GS_noncoll_fold_test_CCCs[name+"_"+str(j)] = fold_test_CCC
+                
+                
+                
+                
     
     
-    
+    GS_noncoll_fold_test_CCCs_df = pd.DataFrame.from_dict(GS_noncoll_fold_test_CCCs, orient="index")
+    GS_noncoll_fold_test_CCCs_df.columns = ["GS Noncoll mean CCC"]
     
     
     GS_noncoll_test_df = pd.DataFrame.from_dict(GS_noncoll_test_CCCs, orient="index")
@@ -176,6 +191,8 @@ if __name__ == '__main__':
     a4_coll_test_CCCs = {}
     a5_coll_test_CCCs = {}
     
+    GS_coll_fold_test_CCCs = {}
+    
     coll_val_mean_CCCs = {}
     
     for fname in os.listdir(coll_data):
@@ -201,10 +218,15 @@ if __name__ == '__main__':
                 a3_coll_test_CCCs[name] = (np.mean(results["Fold Test CCCs"]["a3"]), np.std(results["Fold Test CCCs"]["a3"]))
                 a4_coll_test_CCCs[name] = (np.mean(results["Fold Test CCCs"]["a4"]), np.std(results["Fold Test CCCs"]["a4"]))
                 a5_coll_test_CCCs[name] = (np.mean(results["Fold Test CCCs"]["a5"]), np.std(results["Fold Test CCCs"]["a5"]))
+                
+                
+                for j, fold_test_CCC in enumerate(results["Fold Test CCCs"]["GS"]):
+                    GS_coll_fold_test_CCCs[name+"_"+str(j)] = fold_test_CCC
     
     
     
-    
+    GS_coll_fold_test_CCCs_df = pd.DataFrame.from_dict(GS_coll_fold_test_CCCs, orient="index")
+    GS_coll_fold_test_CCCs_df.columns = ["GS coll mean CCC"]
     
     GS_coll_test_df = pd.DataFrame.from_dict(GS_coll_test_CCCs, orient="index")
     GS_coll_test_df.columns = ["GS coll mean CCC", "GS coll CCC std"]
@@ -268,22 +290,27 @@ if __name__ == '__main__':
             feature_score_wo_annotation_noncoll = combined_test_val_df.loc[annotation_feature_wo_annotation]['GS Noncoll mean CCC']
             
             
-            ann_score_effect_coll[feature_comb_name] = feature_score_coll - feature_score_wo_annotation_coll
-            ann_score_effect_noncoll[feature_comb_name] = feature_score_noncoll - feature_score_wo_annotation_noncoll
+            ann_score_effect_coll[feature_comb_name] = [feature_score_coll - feature_score_wo_annotation_coll, feature_score_coll, feature_score_wo_annotation_coll]
+            
+            
+            ann_score_effect_noncoll[feature_comb_name] = [feature_score_noncoll - feature_score_wo_annotation_noncoll, feature_score_noncoll, feature_score_wo_annotation_noncoll]
         
         else:
             
-            ann_score_effect_coll[feature_comb_name] = np.nan
-            ann_score_effect_noncoll[feature_comb_name] = np.nan
+            ann_score_effect_coll[feature_comb_name] = [np.nan, np.nan, np.nan]
+            ann_score_effect_noncoll[feature_comb_name] = [np.nan, np.nan, np.nan]
         
-    ann_score_effect_coll_df = pd.DataFrame.from_dict(ann_score_effect_coll, orient="index", columns=["Ann. as feature effect coll"])
-    ann_score_effect_noncoll_df = pd.DataFrame.from_dict(ann_score_effect_noncoll, orient="index", columns=["Ann. as feature effect noncoll"])
+    ann_score_effect_coll_df = pd.DataFrame.from_dict(ann_score_effect_coll, orient="index", columns=["Ann. as feature effect coll", "Feature score with annotation", "Feature score wo annotation"])
+    ann_score_effect_noncoll_df = pd.DataFrame.from_dict(ann_score_effect_noncoll, orient="index", columns=["Ann. as feature effect noncoll", "Feature score with annotation", "Feature score wo annotation"])
     
-    combined_test_val_df = combined_test_val_df.join(ann_score_effect_coll_df)
-    combined_test_val_df = combined_test_val_df.join(ann_score_effect_noncoll_df)
+    combined_test_val_df = combined_test_val_df.join(ann_score_effect_coll_df["Ann. as feature effect coll"])
+    combined_test_val_df = combined_test_val_df.join(ann_score_effect_noncoll_df["Ann. as feature effect noncoll"])
     
     combined_test_val_audio_df = filter_audio_only(combined_test_val_df)
     combined_test_val_text_df = filter_text_only(combined_test_val_df)
+    
+    GS_noncoll_fold_test_CCCs_text_df = filter_text_only(GS_noncoll_fold_test_CCCs_df)
+    GS_coll_fold_test_CCCs_text_df = filter_text_only(GS_noncoll_fold_test_CCCs_df)
     
     CF_SF_text_only = (combined_test_val_text_df["coll-noncoll-GS"].mean().round(3), np.round(combined_test_val_text_df["coll-noncoll-GS"].std(),3))
     
@@ -424,6 +451,57 @@ if __name__ == '__main__':
         
         combined_test_val_df["coll-noncoll-GS"].to_csv(data_root+"coll_noncoll_diff_ar.csv")
         
+        
+    #pairwise t-test for text only CF and SF CCC-scores
+    CF_SF_textonly_ttest = stats.ttest_rel(combined_test_val_text_df["GS coll mean CCC"], combined_test_val_text_df["GS Noncoll mean CCC"])
+    CF_SF_audioonly_ttest = stats.ttest_rel(combined_test_val_audio_df["GS coll mean CCC"], combined_test_val_audio_df["GS Noncoll mean CCC"])
+    CF_SF_audio_and_text_ttest = stats.ttest_rel(combined_test_val_df["GS coll mean CCC"], combined_test_val_df["GS Noncoll mean CCC"])
+    
+    
+    ann_score_effect_ttest_coll = stats.ttest_rel(ann_score_effect_coll_df["Feature score with annotation"].dropna(), ann_score_effect_coll_df["Feature score wo annotation"].dropna())
+    ann_score_effect_ttest_noncoll = stats.ttest_rel(ann_score_effect_noncoll_df["Feature score with annotation"].dropna(), ann_score_effect_noncoll_df["Feature score wo annotation"].dropna())
     
     
     
+    all_features = combined_test_val_df.index.to_list()
+    folds = 5 
+    
+    CF_SF_diff_fold_ttest_results = {}
+    CF_SF_diff_fold_ttest_results_for_reported = {}
+    
+    if valence:        
+        reported_features = ["ModernBERT_ExHuBERT_FinnSentiment_Arousal", "ModernBERT_Lexicon_Lingnorm_ExHuBERT_FinnSentiment_Arousal", "ModernBERT_Lexicon_ExHuBERT_FinnSentiment_Arousal", "ModernBERT_Lexicon_Lingnorm_FinnSentiment","ExHuBERT_eGeMAPS","ModernBERT", "Lexicon", "Lingnorm", "FinnSentiment", "eGeMAPS", "ExHuBERT", "Arousal"]
+    
+    else:
+        reported_features = ["ExHuBERT_eGeMAPS_FinnSentiment_Valence", "ModernBERT_Lexicon_ExHuBERT_eGeMAPS_FinnSentiment_Valence", "Lexicon_Lingnorm_ExHuBERT_eGeMAPS_Valence", "ModernBERT_Lexicon_Lingnorm_FinnSentiment","ExHuBERT_eGeMAPS","ModernBERT", "Lexicon", "Lingnorm", "FinnSentiment", "eGeMAPS", "ExHuBERT", "Valence"]
+    
+    
+    for feature in all_features:
+        
+        
+        feature_folds = list(map(lambda i: f"{feature}_{i}", range(folds)))
+        
+        feature_noncoll_folds = GS_noncoll_fold_test_CCCs_df.loc[GS_noncoll_fold_test_CCCs_df.index.isin(feature_folds)] 
+        feature_coll_folds = GS_coll_fold_test_CCCs_df.loc[GS_coll_fold_test_CCCs_df.index.isin(feature_folds)] 
+        
+        
+        stat, p_value = stats.ttest_rel(feature_coll_folds["GS coll mean CCC"], feature_noncoll_folds["GS Noncoll mean CCC"])
+        
+        if p_value < 0.10:
+        
+            CF_SF_diff_fold_ttest_results[feature] = (p_value, np.mean(feature_coll_folds["GS coll mean CCC"]-feature_noncoll_folds["GS Noncoll mean CCC"]))
+            
+            if feature in reported_features:
+                CF_SF_diff_fold_ttest_results_for_reported[feature] = (p_value, np.mean(feature_coll_folds["GS coll mean CCC"]-feature_noncoll_folds["GS Noncoll mean CCC"]))
+            
+        
+        else: 
+            
+            CF_SF_diff_fold_ttest_results[feature] = ("-", np.mean(feature_coll_folds["GS coll mean CCC"]-feature_noncoll_folds["GS Noncoll mean CCC"]))
+            
+            if feature in reported_features:
+                CF_SF_diff_fold_ttest_results_for_reported[feature] = (p_value, np.mean(feature_coll_folds["GS coll mean CCC"]-feature_noncoll_folds["GS Noncoll mean CCC"]))
+            
+            
+            
+            
