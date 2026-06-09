@@ -18,6 +18,7 @@ from sklearn.model_selection import train_test_split, GroupKFold
 from sklearn.metrics import mean_squared_error, r2_score, make_scorer
 from sklearn.inspection import permutation_importance
 import os
+from scipy.stats import pearsonr, spearmanr
 
 import random
 import xgboost as xgb
@@ -33,6 +34,66 @@ def set_seed(seed: int):
 
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
+    
+
+def safe_corr(x, y, method="pearson"):
+    # convert to arrays
+    x = np.array(x)
+    y = np.array(y)
+
+    # remove NaNs pairwise
+    mask = ~np.isnan(x) & ~np.isnan(y)
+    x_clean = x[mask]
+    y_clean = y[mask]
+    
+    total_samples = len(x_clean)
+
+    # if not enough data, return NaN
+    if len(x_clean) < 2:
+        return np.nan, np.nan
+
+    # compute correlation
+    if method == "pearson":
+        corr_coef, p = pearsonr(x_clean, y_clean)
+        
+        return corr_coef, p, total_samples
+    elif method == "spearman":
+        corr_coef, p = spearmanr(x_clean, y_clean)
+        return corr_coef, p, total_samples
+    else:
+        raise ValueError("method must be 'pearson' or 'spearman'")
+    
+def linear_regression(annotation_scores, significant_features):
+    
+    F = significant_features.to_numpy()
+
+    dims = np.shape(F)
+    
+    F_normalized = np.zeros(dims)
+    
+    for dim in range(dims[1]):
+        
+        f = F[:,dim]
+        
+        f_u = np.mean(f)
+        
+        f_std = np.std(f)
+        
+        f_norm = (f - f_u) / f_std
+        
+        F_normalized[:,dim] = f_norm
+    
+    
+    scores = annotation_scores.to_numpy()
+    
+    M = np.linalg.pinv(F)@scores
+    
+    predicted_scores = F@M
+    
+    LR_coeff = {"M": M, "Feature name": significant_features.columns}
+    LR_coeff_df = pd.DataFrame(LR_coeff)
+    
+    return predicted_scores, LR_coeff_df
 
 # -------------------------------------------------
 # CCC loss
@@ -193,9 +254,9 @@ def load_feature_pkl(path, normalize = False):
 
 if __name__ == "__main__":
     
-    
-    #TODO: Tsekkaa tallennettavat metriikat, että on kaikki tarpeellinen
-    #Toteuta annotaattorispesifi testi GS:n lisäksi
+    #NOTE: These are extra analyses related to the interpretability
+    #In the paper we did not report any conclusions related to these experiments, since
+    #The findings are very narrow with the implemented scope
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--data_dir", type=str, default="./data")
@@ -215,7 +276,7 @@ if __name__ == "__main__":
     
     
     
-    parser.add_argument("--metadata", type=str, default="/Volumes/T9/LP_HP_TP_combined/Master_datasets/FinnAffect_Kielipankki/annotations_and_metadata/")
+    parser.add_argument("--metadata", type=str, default="/path_to_FinnAffect/annotations_and_metadata/")
     parser.add_argument("--epochs", type=int, default=50)
     parser.add_argument("--batch_size", type=int, default=32)
     parser.add_argument("--lr", type=float, default=1e-3)
@@ -231,7 +292,7 @@ if __name__ == "__main__":
     parser.add_argument("--use_feil", action="store_true", default=False)
     parser.add_argument("--use_affnorms210", action="store_true", default=False)
     parser.add_argument("--use_affnorms420", action="store_true", default=False)
-    parser.add_argument("--use_lexicon", action="store_true", default=False)
+    parser.add_argument("--use_lexicon", action="store_true", default=True)
     parser.add_argument("--use_ling_norm", action="store_true", default=True)
     parser.add_argument("--use_ling", action="store_true", default=False)
     parser.add_argument("--coll", action="store_true", default=False)
@@ -243,12 +304,14 @@ if __name__ == "__main__":
     
     set_seed(args.seed)
     
+    coll = True
+    
     if args.coll:
-        coll = False
+        coll = True
         
     if args.noncoll:
         
-        coll = True
+        coll = False
 
     # -------------------------------------------------
     # Load labels
@@ -352,7 +415,10 @@ if __name__ == "__main__":
         
     if args.use_lexicon:
         print("Using combined lexicon based vectors")
-        feature_dfs.append(load_feature_pkl(args.lexicon))
+        if coll:
+            feature_dfs.append(load_feature_pkl("./data/lexicon_coll_features.pkl"))
+        else:
+            feature_dfs.append(load_feature_pkl(args.lexicon))
         
         feature_names.extend(list(feature_dfs[-1].columns))
         
@@ -362,7 +428,13 @@ if __name__ == "__main__":
     if args.use_ling:
         print("Using linguistic features")
         #feature_dfs.append(load_feature_pkl(args.prosody))
-        ling_features_df = pd.read_csv(args.ling)
+        
+        if coll:
+            ling_features_df = pd.read_csv("./data/trankit_coll_feats.csv")
+        else:    
+            ling_features_df = pd.read_csv(args.ling)
+        
+        
         ling_features_df.set_index("utt_id", inplace=True)
         ling_features_df.drop(columns=["Unnamed: 0"], inplace=True)
         
@@ -372,19 +444,27 @@ if __name__ == "__main__":
         ling_features_df = ling_features_df[["Case", "Clitic", "Connegative",
                                              "Derivation", "PronType",
                                              "InfForm", "NumType", "Number", "PartForm",
-                                             "Reflex", "Voice",
+                                             "Reflex",
                                              "Voice", "VerbForm", "Tense", 
                                              "Polarity", "Degree", "Mood", 
                                              "Person", "upos", "xpos", "utt_len", "syntax_tree_len"]]
         
         feature_dfs.append(ling_features_df.astype(float))
         
+        feature_names.extend(list(feature_dfs[-1].columns))
+        
         test_set_name = test_set_name+"_"+"Ling"
         
     if args.use_ling_norm:
         print("Using normalized linguistic features")
         #feature_dfs.append(load_feature_pkl(args.prosody))
-        ling_norm_features_df = pd.read_csv(args.lingnorm)
+        
+        if coll:
+            ling_norm_features_df = pd.read_csv("./data/trankit_coll_normalized_feats.csv")
+        else:
+            ling_norm_features_df = pd.read_csv(args.lingnorm)
+            
+            
         ling_norm_features_df.set_index("utt_id", inplace=True)
         ling_norm_features_df.drop(columns=["Unnamed: 0"], inplace=True)
         
@@ -394,12 +474,10 @@ if __name__ == "__main__":
         ling_norm_features_df = ling_norm_features_df[["Case", "Clitic", "Connegative",
                                              "Derivation", "PronType",
                                              "InfForm", "NumType", "Number", "PartForm",
-                                             "Reflex", "Voice",
+                                             "Reflex",
                                              "Voice", "VerbForm", "Tense", 
                                              "Polarity", "Degree", "Mood", 
                                              "Person", "upos", "xpos", "syntax_tree_len"]]
-        
-
         
 
         feature_dfs.append(ling_norm_features_df.astype(float))
@@ -487,35 +565,29 @@ if __name__ == "__main__":
     
     valence = True
     
-    data_root = "/Users/lahtine9/workwork/python_ml_utils/LookingForValence/data/results_all_2/"
+    data_root = "./data/results_all/"
     
-    if valence:
-    
-        coll_data = data_root+"/results_coll_valence_42/"
-        non_coll_data = data_root+"/results_noncoll_valence_42/"
-        
+    if coll:
+        model_path = data_root+"/results_coll_valence_42/"+"best_model_"+test_set_name+".pt"
     else:
-        coll_data = data_root+"/results_coll_arousal_42/"
-        non_coll_data = data_root+"/results_noncoll_arousal_42/"
-        
-    
-    coll_model_path = coll_data+"best_model_"+test_set_name+".pt"
-    non_coll_model_path = non_coll_data+"best_model_"+test_set_name+".pt"
+        model_path = data_root+"/results_noncoll_valence_42/"+"best_model_"+test_set_name+".pt"
     
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
-    coll_model = MLPRegressor(input_dim=X_tr_val.shape[1]).to(device)
-    coll_model.load_state_dict(torch.load(coll_model_path, weights_only=True, map_location=torch.device('cpu')))
-    coll_model = PyTorchRegressorWrapper(coll_model)
-    
-    non_coll_model = MLPRegressor(input_dim=X_tr_val.shape[1]).to(device)
-    non_coll_model.load_state_dict(torch.load(coll_model_path, weights_only=True, map_location=torch.device('cpu')))
-    non_coll_model = PyTorchRegressorWrapper(non_coll_model)
+    model = MLPRegressor(input_dim=X_tr_val.shape[1]).to(device)
+    model.load_state_dict(torch.load(model_path, weights_only=True, map_location=torch.device('cpu')))
+    model = PyTorchRegressorWrapper(model)
     
     
-    r = permutation_importance(coll_model, X_tst, y_tst, n_repeats=30, random_state=args.seed, scoring=score)
-
-    print("Coll importances: ")
+    
+    r = permutation_importance(model, X_tst, y_tst, n_repeats=30, random_state=args.seed, scoring=score)
+    
+    if coll:
+        print("Coll importances: ")
+    else:
+        print("Noncoll importances: ")
+    
+    
     for i in r.importances_mean.argsort()[::-1]:
         if r.importances_mean[i] - 2 * r.importances_std[i] > 0:
             #print(f"{feature_names[i]:<8} "
@@ -525,16 +597,17 @@ if __name__ == "__main__":
             print(str(r.importances_mean[i]))
             print("+-"+str(r.importances_std[i]))
             
-    r = permutation_importance(non_coll_model, X_tst, y_tst, n_repeats=30, random_state=args.seed, scoring=score)
 
-    print("Non Coll importances: ")
-    for i in r.importances_mean.argsort()[::-1]:
-        if r.importances_mean[i] - 2 * r.importances_std[i] > 0:
-            #print(f"{feature_names[i]:<8} "
-            #      f"{r.importances_mean[i]:.3f} "
-            #      f"+/- {r.importances_std[i]:.3f}")
-            print(feature_names[i])
-            print(str(r.importances_mean[i]))
-            print("+-"+str(r.importances_std[i]))
+            
+            
+            
+    ### LINEAR REGRESSION
+    
+        
+    significant_features_nan_imputated = X_df.fillna(X_df.mean(numeric_only=True))
+    
+    predicted_scores, LR_coeff_df = linear_regression(valence_annotated_df["mean"], significant_features_nan_imputated)
+
+    corr_coef, p, total_samples = safe_corr(valence_annotated_df["mean"], predicted_scores, method="pearson")
     
     
