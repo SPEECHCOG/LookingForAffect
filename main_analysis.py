@@ -3,7 +3,7 @@
 """
 Created on Wed Sep 17 13:19:59 2025
 
-@author: lahtine9
+@author: Kalle Lahtinen
 """
 
 import numpy as np
@@ -90,7 +90,7 @@ def filter_text_only(df: pd.DataFrame):
 if __name__ == '__main__':
     
     
-    valence = True
+    valence = False
     
     data_root = "./data/results_all/"
     

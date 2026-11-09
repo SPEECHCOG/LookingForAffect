@@ -3,7 +3,7 @@
 """
 Created on Wed Jan 21 10:23:06 2026
 
-@author: lahtine9
+@author: Kalle Lahtinen
 """
 
 #!/usr/bin/env python3
